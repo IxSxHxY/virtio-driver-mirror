@@ -24,6 +24,16 @@ typedef struct IVSHMEMEventListEntry
     LIST_ENTRY ListEntry;
 } IVSHMEMEventListEntry, *PIVSHMEMEventListEntry;
 
+
+
+// Added for
+typedef struct PRP_MAP_ENTRY {
+    LIST_ENTRY ListEntry;       
+    PMDL pMdl;                  
+    PVOID UserVa;               
+    PVOID ProcessContext;      
+} PRP_MAP_ENTRY, *PPRP_MAP_ENTRY;
+
 typedef struct _DEVICE_CONTEXT
 {
     PIVSHMEMDeviceRegisters devRegisters; // the device registers (BAR0)
@@ -41,6 +51,13 @@ typedef struct _DEVICE_CONTEXT
     IVSHMEMEventListEntry eventBuffer[MAX_EVENTS]; // buffer of pre-allocated events
     UINT16 eventBufferUsed;                        // number of events currenty in use
     LIST_ENTRY eventList;                          // pending events to fire
+
+    PMDL mdlArray[32];
+    ULONG mdlCount;
+
+    LIST_ENTRY PrpMapListHead;    
+    WDFWAITLOCK PrpMapLock;       
+
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, DeviceGetContext)

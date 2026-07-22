@@ -166,11 +166,11 @@ NTSTATUS IVSHMEMEvtDevicePrepareHardware(_In_ WDFDEVICE Device,
                     deviceContext->shmemAddr.PhysicalAddress = descriptor->u.Memory.Start;
                     deviceContext->shmemAddr.NumberOfBytes = descriptor->u.Memory.Length;
                     DEBUG_INFO("memIndex = %d pa = %llx (%llx) size = %lx (%lx)",
-                               memIndex,
-                               descriptor->u.Memory.Start.QuadPart,
-                               deviceContext->shmemAddr.PhysicalAddress.QuadPart,
-                               descriptor->u.Memory.Length,
-                               deviceContext->shmemAddr.NumberOfBytes);
+                                memIndex,
+                                descriptor->u.Memory.Start.QuadPart,
+                                deviceContext->shmemAddr.PhysicalAddress.QuadPart,
+                                descriptor->u.Memory.Length,
+                                deviceContext->shmemAddr.NumberOfBytes);
 
                     result = MmAllocateMdlForIoSpace(&deviceContext->shmemAddr, 1, &deviceContext->shmemMDL);
                     if (!NT_SUCCESS(result))
@@ -180,11 +180,65 @@ NTSTATUS IVSHMEMEvtDevicePrepareHardware(_In_ WDFDEVICE Device,
                     }
                 }
             DEBUG_INFO("memIndex = %d va = %p mdl = %p",
-                       memIndex,
-                       deviceContext->shmemAddr.VirtualAddress,
-                       deviceContext->shmemMDL);
+                        memIndex,
+                        deviceContext->shmemAddr.PhysicalAddress,
+                        deviceContext->shmemMDL);
             ++memIndex;
             continue;
+        }
+        if (descriptor->Type == CmResourceTypeMemoryLarge)
+        {
+            DEBUG_INFO("Found MemoryLarge resource at index %u", i);
+            PHYSICAL_ADDRESS physAddr;
+            SIZE_T length;
+            if (descriptor->Flags & CM_RESOURCE_MEMORY_LARGE_40)
+            {
+                // 40-bit:
+                physAddr.QuadPart = ((ULONGLONG)descriptor->u.Memory40.Start.QuadPart);
+                length = ((SIZE_T)descriptor->u.Memory40.Length40) << 8;
+
+                DEBUG_INFO("40-bit: PA=%llx, Length=%llx", physAddr.QuadPart, length);
+            }
+            else if (descriptor->Flags & CM_RESOURCE_MEMORY_LARGE_48)
+            {
+                // 48-bit
+                physAddr.QuadPart = ((ULONGLONG)descriptor->u.Memory48.Start.QuadPart);
+                length = ((SIZE_T)descriptor->u.Memory48.Length48) << 16;
+
+                DEBUG_INFO("48-bit: PA=%llx, Length=%llx", physAddr.QuadPart, length);
+            }
+            else if (descriptor->Flags & CM_RESOURCE_MEMORY_LARGE_64)
+            {
+                // 64-bit
+                physAddr.QuadPart = descriptor->u.Memory64.Start.QuadPart;
+                length = ((SIZE_T)descriptor->u.Memory64.Length64) << 32;
+
+                DEBUG_INFO("64-bit: PA=%llx, Length=%llx", physAddr.QuadPart, length);
+            }
+            else
+            {
+                DEBUG_ERROR("Unknown MemoryLarge flags: 0x%x", descriptor->Flags);
+                result = STATUS_DEVICE_CONFIGURATION_ERROR;
+                break;
+            }
+            deviceContext->shmemAddr.PhysicalAddress = physAddr;
+            deviceContext->shmemAddr.NumberOfBytes = length;
+
+            // PVOID base_va = NULL;
+
+            // NTSTATUS status = NtAllocateVirtualMemory(NtCurrentProcess(),
+            //                                            &base_va,
+            //                                            0,
+            //                                            (PSIZE_T)4096ULL,
+            //                                            MEM_RESERVE,
+            //                                            PAGE_NOACCESS);
+            // if (!NT_SUCCESS(status))
+            // {
+            //     DEBUG_ERROR("Call to NtAllocateVirtualMemory failed: %08x", status);
+            //     result = status;
+            //     break;
+            // }
+            // DEBUG_ERROR("base_va = %p", base_va);
         }
 
         if (descriptor->Type == CmResourceTypeInterrupt && (descriptor->Flags & CM_RESOURCE_INTERRUPT_MESSAGE))
@@ -214,18 +268,30 @@ NTSTATUS IVSHMEMEvtDevicePrepareHardware(_In_ WDFDEVICE Device,
         }
     }
 
+    InitializeListHead(&deviceContext->PrpMapListHead);
+
+    WDF_OBJECT_ATTRIBUTES lockAttributes;
+    WDF_OBJECT_ATTRIBUTES_INIT(&lockAttributes);
+    lockAttributes.ParentObject = Device;
+
+    NTSTATUS status = WdfWaitLockCreate(&lockAttributes, &deviceContext->PrpMapLock);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("WdfWaitLockCreate failed with status 0x%x", status);
+        return status;
+    }
     if (NT_SUCCESS(result))
     {
         if (!deviceContext->shmemMDL)
         {
             DEBUG_ERROR("%s", "shmemMDL == NULL");
-            result = STATUS_DEVICE_HARDWARE_ERROR;
+            // result = STATUS_DEVICE_HARDWARE_ERROR;
         }
         else
         {
             DEBUG_INFO("Shared Memory: %llx, %lx bytes",
-                       deviceContext->shmemAddr.PhysicalAddress.QuadPart,
-                       deviceContext->shmemAddr.NumberOfBytes);
+                        deviceContext->shmemAddr.PhysicalAddress.QuadPart,
+                        deviceContext->shmemAddr.NumberOfBytes);
             DEBUG_INFO("Interrupts   : %d", deviceContext->interruptsUsed);
         }
     }
@@ -248,7 +314,28 @@ NTSTATUS IVSHMEMEvtDeviceReleaseHardware(_In_ WDFDEVICE Device, _In_ WDFCMRESLIS
 
     if (deviceContext->shmemMap)
     {
-        MmUnmapLockedPages(deviceContext->shmemMap, deviceContext->shmemMDL);
+        // MmUnmapLockedPages(deviceContext->shmemMap, deviceContext->shmemMDL);
+
+        for (ULONG i = 0; i < 32; i++)
+        {
+            if (deviceContext->mdlArray[i] != NULL)
+            {
+                PVOID chunkVA = (PVOID)((SIZE_T)deviceContext->shmemMap + (i * 1ULL * 1024 * 1024 * 1024));
+
+                __try
+                {
+                    MmUnmapLockedPages(chunkVA, deviceContext->mdlArray[i]);
+                    IoFreeMdl(deviceContext->mdlArray[i]);
+                    DEBUG_INFO("Unmapped and freed MDL chunk %u at %p", i, chunkVA);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    DEBUG_ERROR("Exception unmapping chunk %u", i);
+                }
+
+                deviceContext->mdlArray[i] = NULL;
+            }
+        }
         deviceContext->shmemMap = NULL;
     }
 

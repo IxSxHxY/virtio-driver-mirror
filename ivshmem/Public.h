@@ -21,6 +21,7 @@ typedef struct IVSHMEM_MMAP_CONFIG
 /*
     This structure is for use with the IOCTL_IVSHMEM_REQUEST_MMAP IOCTL
 */
+#pragma pack(push, 1)
 typedef struct IVSHMEM_MMAP
 {
     IVSHMEM_PEERID peerID; // our peer id
@@ -28,6 +29,7 @@ typedef struct IVSHMEM_MMAP
     PVOID ptr;             // pointer to the memory region
     UINT16 vectors;        // the number of vectors available
 } IVSHMEM_MMAP, *PIVSHMEM_MMAP;
+
 
 /*
     This structure is for use with the IOCTL_IVSHMEM_RING_DOORBELL IOCTL
@@ -37,6 +39,36 @@ typedef struct IVSHMEM_RING
     IVSHMEM_PEERID peerID; // the id of the peer to ring
     UINT16 vector;         // the doorbell to ring
 } IVSHMEM_RING, *PIVSHMEM_RING;
+
+#define MAX_PRP_ENTRIES 512
+
+typedef struct IVSHMEM_MAP_REQUEST {
+    ULONG64 PhysAddrList[MAX_PRP_ENTRIES]; 
+    ULONG PageCount;                       
+} IVSHMEM_MAP_REQUEST, *PIVSHMEM_MAP_REQUEST;
+
+
+typedef struct IVSHMEM_PRP_MAP_RESPONSE {
+    PVOID UserVa;      
+    // PVOID MdlContext;  
+} IVSHMEM_PRP_MAP_RESPONSE, *PIVSHMEM_PRP_MAP_RESPONSE;
+
+typedef struct IVSHMEM_PRP_MAP_RESPONSE32 {
+    UINT32 UserVa;      
+    // PVOID MdlContext;  
+} IVSHMEM_PRP_MAP_RESPONSE32, *PIVSHMEM_PRP_MAP_RESPONSE32;
+
+typedef struct IVSHMEM_PRP_UNMAP_REQUEST {
+    PVOID UserVa;
+    // PVOID MdlContext;
+} IVSHMEM_PRP_UNMAP_REQUEST, *PIVSHMEM_PRP_UNMAP_REQUEST;
+
+typedef struct IVSHMEM_PRP_UNMAP_REQUEST32 {
+    UINT32 UserVa;
+    // PVOID MdlContext;
+} IVSHMEM_PRP_UNMAP_REQUEST32, *PIVSHMEM_PRP_UNMAP_REQUEST32;
+#pragma pack(pop)
+
 
 /*
    This structure is for use with the IOCTL_IVSHMEM_REGISTER_EVENT IOCTL
@@ -63,3 +95,6 @@ typedef struct IVSHMEM_EVENT
 #define IOCTL_IVSHMEM_RING_DOORBELL  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_IVSHMEM_REGISTER_EVENT CTL_CODE(FILE_DEVICE_UNKNOWN, 0x805, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_IVSHMEM_REQUEST_KMAP   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x806, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_IVSHMEM_MAP_PRP_LIST   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x807, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_IVSHMEM_UNMAP_PRP_LIST CTL_CODE(FILE_DEVICE_UNKNOWN, 0x808, METHOD_BUFFERED, FILE_ANY_ACCESS)

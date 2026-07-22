@@ -5,13 +5,21 @@
 #pragma alloc_text(PAGE, IVSHMEMEvtDeviceAdd)
 #pragma alloc_text(PAGE, IVSHMEMEvtDriverContextCleanup)
 #endif
-
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
 NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath)
 {
     WDF_DRIVER_CONFIG config;
     NTSTATUS status;
     WDF_OBJECT_ATTRIBUTES attributes;
-
+    DEBUG_ERROR("Hi!!!!!!!!!!!!!!!!!!!");
+    DEBUG_INFO("Hi!!!!!!!!!!!!!!!!!!!");
+    DEBUG_PRINT("Hi!!!!!!!!!!!!!!!!!!!");
+    #ifdef DBG
+        DEBUG_PRINT("ivshmem: DBG build");
+    #else
+        DEBUG_PRINT("ivshmem: RELEASE build (DBG=1 forced by build script)");
+    #endif
     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
     WDF_DRIVER_CONFIG_INIT(&config, IVSHMEMEvtDeviceAdd);
 
