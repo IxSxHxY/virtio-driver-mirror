@@ -848,6 +848,7 @@ static NTSTATUS ioctl_unmap_prp_list(const PDEVICE_CONTEXT DeviceContext,
     NTSTATUS status = STATUS_NOT_FOUND;
     PIVSHMEM_PRP_UNMAP_REQUEST pReq;
     PLIST_ENTRY curr, head;
+    PVOID targetUserVa;
     DEBUG_INFO("Inside ioctl_unmap_prp_list!");
     *BytesReturned = 0;
     UNREFERENCED_PARAMETER(InputBufferLength);
@@ -866,6 +867,23 @@ static NTSTATUS ioctl_unmap_prp_list(const PDEVICE_CONTEXT DeviceContext,
         return status;
     }
 
+    // Pull UserVa out using the correct struct layout for the caller's bitness.
+    // Reading pReq->UserVa directly as the 64-bit struct when the actual buffer
+    // was retrieved/sized as the 32-bit struct reads garbage past the real field.
+#ifdef _WIN64
+    if (is32Bit)
+    {
+        PIVSHMEM_PRP_UNMAP_REQUEST32 pReq32 = (PIVSHMEM_PRP_UNMAP_REQUEST32)pReq;
+        targetUserVa = UlongToPtr(pReq32->UserVa);
+    }
+    else
+#endif
+    {
+        targetUserVa = pReq->UserVa;
+    }
+
+    status = STATUS_NOT_FOUND;
+
     WdfWaitLockAcquire(DeviceContext->PrpMapLock, NULL);
 
     head = &DeviceContext->PrpMapListHead;
@@ -874,7 +892,7 @@ static NTSTATUS ioctl_unmap_prp_list(const PDEVICE_CONTEXT DeviceContext,
     while (curr != head)
     {
         PPRP_MAP_ENTRY pEntry = CONTAINING_RECORD(curr, PRP_MAP_ENTRY, ListEntry);
-        if (pEntry->UserVa == pReq->UserVa)
+        if (pEntry->UserVa == targetUserVa)
         {
             DEBUG_INFO("[ioctl_unmap_prp_list] Removing UserVA=%p | MdlContext=%p", pEntry->UserVa, pEntry->pMdl);
             MmUnmapLockedPages(pEntry->UserVa, pEntry->pMdl);
@@ -887,7 +905,16 @@ static NTSTATUS ioctl_unmap_prp_list(const PDEVICE_CONTEXT DeviceContext,
         }
         curr = curr->Flink;
     }
-    DEBUG_INFO("[ioctl_unmap_prp_list] PRP List unmapped successfully!");
+
+    if (status != STATUS_SUCCESS)
+    {
+        DEBUG_INFO("[ioctl_unmap_prp_list] UserVA=%p not found in PRP map list!", targetUserVa);
+    }
+    else
+    {
+        DEBUG_INFO("[ioctl_unmap_prp_list] PRP List unmapped successfully!");
+    }
+
     WdfWaitLockRelease(DeviceContext->PrpMapLock);
     return status;
 }
