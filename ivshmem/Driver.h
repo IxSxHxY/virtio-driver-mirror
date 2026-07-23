@@ -23,8 +23,6 @@
     {                                                                                                                  \
         DbgPrint("[P:IVSHMEM] " fmt "\n", ##__VA_ARGS__);                                                              \
     } while (0)
-#define MyDebugPrint(Level, Format, ...) \
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, Level, Format __VA_OPT__(,) __VA_ARGS__))
 EXTERN_C_START
 
 //
